@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テレアポ自動採点チャレンジ v8</title>
+    <style>
+        :root {
+            --primary-color: #34495e;
+            --accent-color: #3498db;
+            --bg-color: #f5f7fa;
+            --card-bg: #ffffff;
+            --timer-color: #e74c3c;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: #333;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 700px;
+            width: 100%;
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            font-size: 22px;
+            margin-bottom: 5px;
+        }
+
+        .description {
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-bottom: 25px;
+        }
+
+        /* タイマーUI */
+        .timer-panel {
+            background: #edf2f7;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .timer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .timer-text {
+            font-size: 32px;
+            font-weight: 900;
+            color: var(--timer-color);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .status-badge {
+            background: #cbd5e0;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #4a5568;
+        }
+        .status-badge.recording {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 12px;
+            background-color: #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 100%;
+            background-color: var(--timer-color);
+            width: 100%;
+        }
+
+        /* 無音警告エリア */
+        .silence-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border: 1px solid #ffeeba;
+            animation: pulse 1s infinite alternate;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        /* 先生のエリア */
+        .teacher-area {
+            background: #f8f9fa;
+            border: 2px dashed #cbd5e0;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .teacher-face {
+            font-size: 64px;
+            margin-bottom: 10px;
+            transition: transform 0.3s;
+        }
+
+        .score-display {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .feedback-text {
+            font-size: 14px;
+            color: #4a5568;
+            max-width: 550px;
+            line-height: 1.6;
+            text-align: left;
+            background: #ffffff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* 音声認識テキストエリア */
+        .transcript-box {
+            width: 100%;
+            height: 100px;
+            border: 1px solid #cbd5e0;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 14px;
+            color: #4a5568;
+            background: #fafafa;
+            text-align: left;
+            overflow-y: auto;
+            margin-bottom: 25px;
+        }
+
+        /* コントロールボタン */
+        .start-btn {
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.3);
+            transition: all 0.2s;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(46, 204, 113, 0.4);
+        }
+
+        .start-btn:disabled {
+            background-color: #95a5a6;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .start-btn.recording {
+            background-color: #e74c3c;
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        /* キーワードガイド */
+        .guide-box {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            text-align: left;
+            font-size: 12px;
+            color: #718096;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📞 テレアポリアルタイム採点システム</h1>
+    <p class="description">「チャレンジ開始」を押し、30秒以内でトークしてください。3秒間の無音で自動採点されます。</p>
+
+    <div class="timer-panel">
+        <div class="timer-header">
+            <span id="statusBadge" class="status-badge">待機中</span>
+            <div class="timer-text"><span id="timeLeft">30.0</span> 秒</div>
+        </div>
+        <div class="progress-bar-bg">
+            <div id="progressBar" class="progress-bar"></div>
+        </div>
+    </div>
+
+    <div class="silence-warning" id="silenceWarning" style="display: none;">
+        ⚠️ 話が途切れました。あと <span id="silenceLeft">3</span> 秒で自動採点に入ります！
+    </div>
+
+    <!-- 先生のフィードバックエリア -->
+    <div class="teacher-area" id="teacherArea">
+        <div class="teacher-face" id="teacherFace">👨‍🏫</div>
+        <div class="score-display" id="scoreDisplay">-- 点</div>
+        <div class="feedback-text" id="feedbackText" style="text-align: center;">ここに先生からの採点とアドバイスが表示されます。</div>
+    </div>
+
+    <div class="transcript-box" id="transcriptBox">
+        ここにあなたが話した言葉がリアルタイムで表示されます...
+    </div>
+
+    <button class="start-btn" id="startBtn" onclick="toggleRecording()">チャレンジ開始 🎤</button>
+
+    <div class="guide-box">
+        <strong>💡 高得点のコツ（加点キーワード）：</strong><br>
+        「初めてお電話」「事例」「1分だけ」「ご担当者様」「解決」「自動化」「削減」「効率」など<br>
+        <span style="color: #e74c3c;">※NGワード（減点）：「お世話になっております」「営業」「売り込み」「案内」「すみません」</span>
+    </div>
+</div>
+
+<script>
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+    let isRecording = false;
+    
+    let mainLoopInterval;
+    const maxDuration = 30; 
+    let timeLeft = maxDuration;
+    let silenceTime = 0;   
+    let spokenText = "";
+
+    if (!SpeechRecognition) {
+        alert("お使いのブラウザは音声認識に対応していません。Google Chrome または Microsoft Edge をご使用ください。");
+    } else {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'ja-JP';
+        recognition.interimResults = true; 
+        recognition.continuous = true;     
+        
+        recognition.onresult = (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+            
+            spokenText = finalTranscript || interimTranscript;
+            document.getElementById('transcriptBox').innerText = spokenText;
+            silenceTime = 0;
+        };
+
+        recognition.onerror = (event) => {
+            console.error("音声認識エラー:", event.error);
+            if(event.error === 'not-allowed') {
+                alert("マイクの利用が許可されていません。ブラウザの設定を確認してください。");
+                stopChallenge();
+            }
+        };
+
+        recognition.onend = () => {
+            if (isRecording) recognition.start();
+        };
+    }
+
+    function toggleRecording() {
+        if (isRecording) {
+            stopChallenge();
+        } else {
+            startChallenge();
+        }
+    }
+
+    function startChallenge() {
+        window.speechSynthesis.cancel();
+        
+        isRecording = true;
+        spokenText = "";
+        timeLeft = maxDuration;
+        silenceTime = 0;
+        
+        document.getElementById('transcriptBox').innerText = "お話しください...";
+        
+        const statusBadge = document.getElementById('statusBadge');
+        statusBadge.innerText = "録音・認識中";
+        statusBadge.classList.add('recording');
+        
+        const startBtn = document.getElementById('startBtn');
+        startBtn.innerText = "終了して採点 🛑";
+        startBtn.classList.add('recording');
+
+        document.getElementById('teacherFace').innerText = "🧐";
+        document.getElementById('scoreDisplay').innerText = "-- 点";
+        document.getElementById('feedbackText').innerText = "集中して聞いていますよ。どうぞ！";
+        document.getElementById('feedbackText').style.textAlign = "center";
+        document.getElementById('silenceWarning').style.display = 'none';
+
+        recognition.start();
+
+        mainLoopInterval = setInterval(() => {
+            timeLeft -= 0.1;
+            if (timeLeft < 0) timeLeft = 0;
+
+            document.getElementById('timeLeft').innerText = timeLeft.toFixed(1);
+            const percent = (timeLeft / maxDuration) * 100;
+            document.getElementById('progressBar').style.width = percent + '%';
+
+            silenceTime += 0.1;
+
+            const silenceWarning = document.getElementById('silenceWarning');
+            if (silenceTime >= 1.0 && spokenText !== "") {
+                silenceWarning.style.display = 'block';
+                const remainingSilence = Math.ceil(3.0 - silenceTime);
+                document.getElementById('silenceLeft').innerText = remainingSilence > 0 ? remainingSilence : 0;
+            } else {
+                silenceWarning.style.display = 'none';
+            }
+
+            if (silenceTime >= 3.0 && spokenText !== "") {
+                stopChallenge();
+            } else if (timeLeft <= 0) {
+                stopChallenge();
+            }
+        }, 100);
+    }
+
+    function stopChallenge() {
+        if (!isRecording) return;
+        isRecording = false;
+
+        clearInterval(mainLoopInterval);
+        recognition.stop();
+
+        const statusBadge = document.getElementById('statusBadge');
+        statusBadge.innerText = "待機中";
+        statusBadge.classList.remove('recording');
+
+        const startBtn = document.getElementById('startBtn');
+        startBtn.innerText = "チャレンジ開始 🎤";
+        startBtn.classList.remove('recording');
+        document.getElementById('silenceWarning').style.display = 'none';
+
+        calculateScore(spokenText);
+    }
+
+    function playAudioTone(type) {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            function createNote(freq, startTime, duration, waveType = 'sine', volume = 0.2) {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                osc.type = waveType;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + startTime);
+                gainNode.gain.setValueAtTime(volume, audioCtx.currentTime + startTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + startTime);
+                osc.stop(audioCtx.currentTime + startTime + duration);
+            }
+
+            if (type === 'excellent') {
+                createNote(523.25, 0, 0.15, 'triangle');    
+                createNote(659.25, 0.04, 0.15, 'triangle'); 
+                createNote(783.99, 0.08, 0.15, 'triangle'); 
+                createNote(1046.50, 0.12, 0.8, 'sine', 0.3); 
+            } else if (type === 'good') {
+                createNote(783.99, 0, 0.08, 'sine');
+                createNote(1046.50, 0.06, 0.4, 'sine');
+            } else if (type === 'bad') {
+                createNote(220.00, 0, 0.2, 'sawtooth', 0.15); 
+                createNote(207.65, 0.12, 0.5, 'sawtooth', 0.15); 
+            } else {
+                createNote(146.83, 0, 0.1, 'sawtooth', 0.2); 
+                createNote(110.00, 0.08, 0.6, 'sawtooth', 0.2); 
+            }
+        } catch (e) {
+            console.error("効果音再生エラー:", e);
+        }
+    }
+
+    function calculateScore(text) {
+        document.getElementById('feedbackText').style.textAlign = "left";
+
+        if (!text || text === "お話しください..." || text.trim().length < 5) {
+            showResult(0, "😭", "error", "何も聞こえませんでした…。お使いのパソコンのマイクが正常に音を拾っていないか、あるいは設定でミュートになっている可能性が非常に高いです。あるいは声が小さすぎて認識されなかったのかもしれません。テレアポは最初の一言の「声の明るさ」と「堂々とした態度」が命です。焦る必要は一切ありませんので、まずは周囲の環境やブラウザのマイク許可設定、PCのボリュームなどをしっかり確認してみてください。実際の顧客に語りかけるような気持ちで、お腹から大きな声を出して、もう一度最初から元気にチャレンジしてみましょう！");
+            return;
+        }
+
+        let score = 50; 
+        let detectedGood = [];
+        let detectedBad = [];
+
+        const goodWords = [
+            { word: "初めて", pts: 10 },
+            { word: "事例", pts: 15 },
+            { word: "1分", pts: 10 },
+            { word: "一分", pts: 10 },
+            { word: "担当", pts: 5 },
+            { word: "解決", pts: 5 },
+            { word: "メリット", pts: 10 },
+            { word: "削減", pts: 10 },
+            { word: "自動化", pts: 5 },
+            { word: "効率", pts: 5 }
+        ];
+
+        const badWords = [
+            { word: "お世話になっております", pts: -15 },
+            { word: "営業", pts: -15 },
+            { word: "売り込み", pts: -10 },
+            { word: "案内", pts: -5 },
+            { word: "すみません", pts: -5 },
+            { word: "よろしいでしょうか", pts: -5 }
+        ];
+
+        // 単語チェックと記録
+        goodWords.forEach(item => { 
+            if (text.includes(item.word)) {
+                score += item.pts;
+                if (!detectedGood.includes(item.word)) detectedGood.push(item.word);
+            }
+        });
+        badWords.forEach(item => { 
+            if (text.includes(item.word)) {
+                score += item.pts;
+                if (!detectedBad.includes(item.word)) detectedBad.push(item.word);
+            }
+        });
+
+        if (text.length > 40 && text.length < 150) score += 10; 
+        if (text.length >= 150) score -= 10; 
+
+        if (score > 100) score = 100;
+        if (score < 0) score = 0;
+
+        // 🧠 【新開発】20段階の「感情・状態ベース」マトリクス
+        let face = "🧐";
+        let soundType = "good";
+        let baseAssessment = "";
+
+        if (score === 100) { face = "👑"; soundType = "excellent"; baseAssessment = "完璧を通り越して感動的です！あなたのトークはテレアポという枠を超え、洗練された最高峰のビジネスアプローチになっています。声のトーン、テンポ、言葉の選択すべてが美しく、相手に拒絶の隙を一切与えません。社内全員がお手本とすべき歴史的なクオリティと言えます。"; }
+        else if (score >= 95) { face = "🥇"; soundType = "excellent"; baseAssessment = "驚異的なハイスコアです！トップアポインターとしての風格が十分に漂う、無駄の一切ない極めて洗練されたトーク展開です。テレアポにおける最重要項目である「相手が聞くべき理由」と「心理的ハードルの低さ」が完璧なバランスで言語化されています。実際の現場でも圧倒的な成果を叩き出せるでしょう。"; }
+        else if (score >= 90) { face = "🥈"; soundType = "excellent"; baseAssessment = "文句なしのトッププレイヤークラスです！テレアポの基本方針が完全に体得されており、非の打ち所がない見事なアプローチです。売り込み感を徹底的に排除しつつ、相手が関心を持つキーワードを印象的に散りばめられている点が素晴らしいですね。即戦力として現場の数字を牽引できる仕上がりです。"; }
+        else if (score >= 85) { face = "🥉"; soundType = "excellent"; baseAssessment = "エース級の大変優秀なトークです！テレアポにおいて重要とされるフックがきれいに機能しています。相手に一切のストレスを与えず、自然に話を聞かせるプロの技が光っています。このクオリティを維持できれば、アプローチ数に対するアポイント獲得率は確実に右肩上がりになります。"; }
+        else if (score >= 80) { face = "✨"; soundType = "excellent"; baseAssessment = "素晴らしいハイレベルな仕上がりです！伝えるべき重要な要素はすべて網羅されており、アポ獲得に必要なフックが的確に効いています。相手に「売り込みだ」と身構えさせない工夫が随所に見られ、非常に安心感のあるスマートなトークです。実際の架電でも高い打率を期待できます。"; }
+        else if (score >= 75) { face = "🤩"; soundType = "good"; baseAssessment = "非常に優秀なレベルに達しています！テレアポの型がしっかりと頭に入っており、スムーズで聞き取りやすいトークが展開できています。必要なフレーズも過不足なく入っているため、及第点を大きく超える成果を出せる状態です。ここからさらに上のランクへ突き抜けましょう。"; }
+        else if (score >= 70) { face = "👍"; soundType = "good"; baseAssessment = "見事な合格ラインクリアです！基本に忠実で、非常に丁寧かつ誠実なトークができています。誰が聞いても嫌な印象を与えない安心感があり、テレアポの基礎体力がばっちり身についている証拠です。この調子で架電数を重ねていけば、安定してアポイントを積み上げることができるでしょう。"; }
+        else if (score >= 65) { face = "🙂"; soundType = "good"; baseAssessment = "しっかり及第点をクリアしています！テレアポの基本の流れは掴めており、必要な言葉も選べています。ただ、全体的に少し「マニュアルを読んでいる感」や、トークが守りに入っている印象を受けます。相手を納得させるためには、あなた自身の言葉に「自信」という説得力を乗せることが大切です。"; }
+        else if (score >= 60) { face = "🤨"; soundType = "good"; baseAssessment = "惜しい！あと一歩で合格ラインという状態です。言葉遣いは非常に丁寧で好印象ですが、トークの中にターゲットの警戒心を解くための強烈なフックがまだ少し不足しています。これが相手の無意識の防衛本能を刺激し、「結構です」と言われる原因になりかねません。"; }
+        else if (score >= 55) { face = "😐"; soundType = "bad"; baseAssessment = "平均的なレベルですが、これでは現場で苦戦してしまう可能性が高いです。丁寧ではありますが、全体的にトークが平坦で、相手に響く強みが弱いです。これだと、忙しいビジネスパーソンは「あ、結構です」と聞き流してしまいます。構成を少し変える必要がありますね。"; }
+        else if (score >= 50) { face = "😑"; soundType = "bad"; baseAssessment = "やや厳しい要改善レベルです。一生懸命話しているのは伝わりますが、トークの組み立てが完全に自社本位になってしまっています。商品の説明や案内に終始してしまうと、相手は一瞬で「売り込みだ」と判断し、断る隙を探し始めます。引き算のトークを意識してください。"; }
+        else if (score >= 45) { face = "🫣"; soundType = "bad"; baseAssessment = "要注意レベルです。このままだと、担当者に繋がる前の「受付の段階」で確実に捕まり、即座にブロックされてしまうリスクが非常に高いです。用件を曖昧にして社長や担当者を呼び出そうとするのは避け、社内に繋ぐべき正当な理由と大義名分をハッキリと提示する型を身につけましょう。"; }
+        else if (score >= 40) { face = "😟"; soundType = "bad"; baseAssessment = "かなり苦戦気味のトークです。テレアポで断られる定番のフレーズがいくつか混ざってしまっています。これらの言葉は、相手に「拒絶してください」と言っているようなものです。忙しい相手の時間を奪う売り込みスタンスから、相手の課題を解決するスタンスへと意識を変えましょう。"; }
+        else if (score >= 35) { face = "😰"; soundType = "bad"; baseAssessment = "要見直しレベルです。残念ながら、このトーク展開のままだと実際の架電で冷たく断られるケースが多発し、メンバーのモチベーションが低下する原因になります。ダラダラと長く話さず、30秒以内で要件をシンプルに伝えるテレアポの基本の型を徹底的に体に叩き込んでください。"; }
+        else if (score >= 30) { face = "📉"; soundType = "bad"; baseAssessment = "非常に危険なガチャ切り警戒レベルです。トークの主動権を完全に相手に握られてしまっており、言われるがままに主動権を失っています。相手の「忙しい」「結構です」というお断りに対して、言葉に詰まってしまったり、言い訳のような説明を重ねてしまうのは逆効果です。"; }
+        else if (score >= 25) { face = "❌"; soundType = "bad"; baseAssessment = "要猛特訓レベルです。テレアポの基本の型が完全に崩れてしまっています。何のための電話なのか、誰宛てなのか、聞くことでどんなメリットがあるのかが、電話口の相手に全く伝わっていません。これでは、どんなに優しい相手でも電話を切ってしまいます。基本の型をトレースしましょう。"; }
+        else if (score >= 20) { face = "🚨"; soundType = "bad"; baseAssessment = "大至急対策が必要な赤信号レベルです。あなたのトークは、相手の「最も嫌がる営業臭さ」を直撃してしまっています。これでは受話器を持った瞬間に拒絶されても文句は言えません。独りよがりの売り込みトークになっており、相手への配慮やメリットの提示がゼロの状態です。"; }
+        else if (score >= 15) { face = "👿"; soundType = "bad"; baseAssessment = "壊滅的なスコアです。ビジネスの電話として体裁を成していません。トークの組み立て以前に、相手に対するメリットの提示や引きつけの言葉が一切見当たらず、ただマニュアルの文字をなぞっているかのような印象です。これでは実際の架電に出ることは到底できません。"; }
+        else if (score >= 10) { face = "😱"; soundType = "error"; baseAssessment = "危機的状況です。新規のテレアポにおいて絶対にやってはいけないNGワードを連発してしまっています。これでは相手を怒らせてしまうか、一瞬でガチャ切りされるのがオチです。スキル以前に、テレアポという業務に対する理解と準備が圧倒的に不足しています。一旦受話器を置きましょう。"; }
+        else { face = "☠️"; soundType = "error"; baseAssessment = "絶望的なスコアです。言葉が詰まりすぎているか、声が小さすぎて相手に全く届いていない可能性もあります。テレアポにおいて最悪なのは、相手に「何を言っているか分からない」と思わせることです。正しい型を覚えて練習すれば必ず点数は上がります。諦めずに再出発です！"; }
+
+        // 🛠️ 【新機能】ユーザーの発話に完全に合わせた「動的アドバイス生成エンジン」
+        let speechAnalysis = "";
+        
+        // ① 実際に発話された加点ワードを褒める
+        if (detectedGood.length > 0) {
+            let goodList = detectedGood.map(w => `「${w}」`).join('や');
+            speechAnalysis += `実際の音声からは、しっかり${goodList}というプラスのキーワードが検知できました。これは相手の興味を引く上で非常に有効に機能しています。`;
+        } else {
+            speechAnalysis += `今回のトークでは、相手を惹きつけるための「事例」や「1分だけ」といった強力な加点キーワードが一切検知できなかったのが非常に惜しいポイントです。`;
+        }
+
+        // ② 実際に言ってしまった減点ワードを指摘する
+        if (detectedBad.length > 0) {
+            let badList = detectedBad.map(w => `「${w}」`).join('や');
+            speechAnalysis += `しかし、トーク内に${badList}という営業感を強めてしまうNGワードが含まれてしまっているため、相手に一瞬で警戒心を抱かせる原因になります。`;
+        } else {
+            speechAnalysis += `また、相手に「売り込みだ」と身構えさせるような営業臭いNGワードを完璧にシャットアウトできている点は素晴らしい工夫です。`;
+        }
+
+        // ③ 次に向けた具体的なアクション（文字数の調整）
+        let nextAction = "次のチャレンジでは、画面下のガイドにある加点キーワードを意識的にトークへ組み込み、売り込みではなく『他社事例の共有』というギバーのスタンスを前面に出して、30秒以内でハキハキと言い切る特訓を繰り返していきましょう！";
+
+        // 最終的なフィードバック文をガッチャンコ（約250文字〜300文字）
+        let finalFeedback = `${baseAssessment}${speechAnalysis}${nextAction}`;
+
+        showResult(score, face, soundType, finalFeedback);
+    }
+
+    function showResult(score, face, soundType, feedback) {
+        document.getElementById('scoreDisplay').innerText = score + " 点";
+        document.getElementById('teacherFace').innerText = face;
+        document.getElementById('feedbackText').innerText = feedback;
+        
+        const faceEl = document.getElementById('teacherFace');
+        faceEl.style.transform = "scale(1.2)";
+        setTimeout(() => faceEl.style.transform = "scale(1)", 300);
+
+        playAudioTone(soundType);
+
+        window.speechSynthesis.cancel(); 
+        
+        const uttr = new SpeechSynthesisUtterance(feedback);
+        uttr.lang = "ja-JP";
+        uttr.rate = 2.0;  // 🚀 超爆速スピード
+        uttr.pitch = 1.0; 
+
+        window.speechSynthesis.speak(uttr);
+    }
+</script>
+
+</body>
+</html>
